@@ -1203,15 +1203,48 @@ details summary { cursor: pointer; color: var(--text-muted); font-size: 12.5px; 
   }
 
   // ------------------------------------------------------------ interaction
+  // Active pointers by id. One pointer drags (or taps to select); two pinch,
+  // zooming about their midpoint and following it as it moves.
+  const pointers = new Map();
   let drag = null;
+  let pinch = null;
+  const localPoint = (ev) => {
+    const r = canvas.getBoundingClientRect();
+    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+  };
+  const startDrag = (p, moved) => { drag = { x: p.x, y: p.y, cam: { ...state.camera }, moved }; };
+  function startPinch() {
+    const [a, b] = [...pointers.values()];
+    pinch = {
+      cam: { ...state.camera },
+      dist: Math.max(1, Math.hypot(b.x - a.x, b.y - a.y)),
+      anchor: fromScreen(state.camera, (a.x + b.x) / 2, (a.y + b.y) / 2),
+    };
+    drag = null;
+    $('tooltip').hidden = true;
+  }
   canvas.addEventListener('pointerdown', (ev) => {
-    canvas.setPointerCapture(ev.pointerId);
-    drag = { x: ev.offsetX, y: ev.offsetY, cam: { ...state.camera }, moved: false };
+    try { canvas.setPointerCapture(ev.pointerId); } catch { /* pointer already gone */ }
+    const p = localPoint(ev);
+    pointers.set(ev.pointerId, p);
+    if (pointers.size === 2) startPinch();
+    else if (pointers.size === 1) startDrag(p, false);
   });
   canvas.addEventListener('pointermove', (ev) => {
     const tip = $('tooltip');
+    const p = localPoint(ev);
+    if (pointers.has(ev.pointerId)) pointers.set(ev.pointerId, p);
+    if (pinch && pointers.size >= 2) {
+      const [a, b] = [...pointers.values()];
+      const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, pinch.cam.scale * Math.hypot(b.x - a.x, b.y - a.y) / pinch.dist));
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      const pw = size.w - MARGIN_LEFT, ph = size.h - MARGIN_BOTTOM;
+      state.camera = { scale, n: pinch.anchor.n - (mx - MARGIN_LEFT - pw / 2) / scale, z: pinch.anchor.z + (my - ph / 2) / scale };
+      requestDraw();
+      return;
+    }
     if (drag) {
-      const dx = ev.offsetX - drag.x, dy = ev.offsetY - drag.y;
+      const dx = p.x - drag.x, dy = p.y - drag.y;
       if (Math.hypot(dx, dy) > 4) drag.moved = true;
       if (drag.moved) {
         canvas.classList.add('dragging');
@@ -1221,22 +1254,40 @@ details summary { cursor: pointer; color: var(--text-muted); font-size: 12.5px; 
         return;
       }
     }
-    const e = entryAt(ev.offsetX, ev.offsetY);
+    if (ev.pointerType === 'touch') return;
+    showTooltip(p);
+  });
+  function showTooltip(p) {
+    const tip = $('tooltip');
+    const e = entryAt(p.x, p.y);
     if (!e) { tip.hidden = true; return; }
     tip.innerHTML = tooltipHtml(e);
     tip.hidden = false;
     const tw = tip.offsetWidth, th = tip.offsetHeight;
-    tip.style.left = `${Math.min(ev.offsetX + 14, size.w - tw - 4)}px`;
-    tip.style.top = `${Math.min(Math.max(0, ev.offsetY - 10), size.h - th - 4)}px`;
-  });
-  canvas.addEventListener('pointerup', (ev) => {
+    tip.style.left = `${Math.max(0, Math.min(p.x + 14, size.w - tw - 4))}px`;
+    tip.style.top = `${Math.max(0, Math.min(p.y - 10, size.h - th - 4))}px`;
+  }
+  function endPointer(ev, cancelled) {
+    if (!pointers.has(ev.pointerId)) return;
+    pointers.delete(ev.pointerId);
+    if (pinch) {
+      // a finger lifted mid-pinch: keep panning with the other, never select
+      pinch = null;
+      if (pointers.size === 1) startDrag([...pointers.values()][0], true);
+      return;
+    }
     const d = drag;
     drag = null;
     canvas.classList.remove('dragging');
-    if (!d || d.moved) return;
-    const e = entryAt(ev.offsetX, ev.offsetY);
+    if (cancelled || !d || d.moved) return;
+    const p = localPoint(ev);
+    const e = entryAt(p.x, p.y);
     select(e ? e.k : null, false);
-  });
+    // no hover on touch screens: a tap also shows the nuclide's details
+    if (ev.pointerType === 'touch') showTooltip(p);
+  }
+  canvas.addEventListener('pointerup', (ev) => endPointer(ev, false));
+  canvas.addEventListener('pointercancel', (ev) => endPointer(ev, true));
   canvas.addEventListener('pointerleave', () => { $('tooltip').hidden = true; });
   canvas.addEventListener('wheel', (ev) => {
     ev.preventDefault();
