@@ -84,11 +84,11 @@ header.top .spacer { flex: 1; }
 
 .layout { flex: 1; display: flex; min-height: 0; }
 aside.side {
-  width: 330px;
+  width: var(--side-w, 330px);
+  max-width: calc(100vw - 360px);
   flex: none;
   overflow-y: auto;
   background: var(--surface);
-  border-right: 1px solid var(--border);
   padding: 12px 14px 24px;
 }
 main.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
@@ -181,17 +181,19 @@ details summary { cursor: pointer; color: var(--text-muted); font-size: 12.5px; 
 .colorbar canvas { width: 260px; height: 12px; border: 1px solid var(--border); }
 
 .detail {
-  flex: none; height: 300px; display: flex; gap: 12px;
-  background: var(--surface); border-top: 1px solid var(--border); padding: 10px 12px;
+  flex: none; height: var(--detail-h, 300px); max-height: calc(100vh - 260px); display: flex; gap: 0;
+  background: var(--surface); padding: 10px 12px;
 }
 .detail[hidden] { display: none; }
-.detail .info { width: 300px; flex: none; overflow-y: auto; font-size: 13px; }
+.detail .info { width: var(--info-w, 300px); max-width: calc(100% - 260px); flex: none; overflow-y: auto; font-size: 13px; }
 .detail .info h3 { margin: 0 0 4px; font-size: 16px; }
 .detail .info dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 6px 0; font-variant-numeric: tabular-nums; }
 .detail .info dt { color: var(--text-muted); }
 .detail .info dd { margin: 0; }
 .detail .plot-wrap { position: relative; flex: 1; min-width: 0; }
 .detail .plot-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; }
+.plot-foot { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
+.plot-foot label { flex: none; margin-top: 4px; white-space: nowrap; }
 .plot-legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; margin-top: 4px; }
 .plot-legend span::before {
   content: ""; display: inline-block; width: 16px; height: 0; border-top: 2.5px solid var(--c);
@@ -199,13 +201,32 @@ details summary { cursor: pointer; color: var(--text-muted); font-size: 12.5px; 
 }
 .plot-legend span.dash::before { border-top-style: dashed; }
 
+/* draggable dividers */
+.splitter { flex: none; background: var(--border); position: relative; z-index: 2; touch-action: none; }
+.splitter.v { width: 1px; cursor: col-resize; }
+.splitter.h { height: 1px; cursor: row-resize; }
+/* a wider invisible grip than the 1 px line */
+.splitter::after { content: ""; position: absolute; }
+.splitter.v::after { inset: 0 -6px; }
+.splitter.h::after { inset: -6px 0; }
+.splitter:hover, .splitter:focus-visible, .splitter.active { background: var(--accent); outline: none; }
+.splitter.v:hover, .splitter.v:focus-visible, .splitter.v.active { box-shadow: 0 0 0 1px var(--accent); }
+.splitter.h:hover, .splitter.h:focus-visible, .splitter.h.active { box-shadow: 0 0 0 1px var(--accent); }
+.detail .splitter.v { margin: -10px 12px; }
+.splitter.h:has(+ .detail[hidden]) { display: none; }
+body.resizing, body.resizing * { user-select: none; }
+body.resizing.col, body.resizing.col * { cursor: col-resize !important; }
+body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
+
 @media (max-width: 860px) {
+  #split-side, #split-info, #split-detail { display: none; }
+  .detail { border-top: 1px solid var(--border); }
   header.top .sub:first-of-type { display: none; }
   .layout { flex-direction: column; }
-  aside.side { width: auto; border-right: 0; border-bottom: 1px solid var(--border); max-height: 45vh; }
+  aside.side { width: auto; max-width: none; border-bottom: 1px solid var(--border); max-height: 45vh; }
   .chart-wrap { min-height: 420px; }
-  .detail { height: auto; flex-direction: column; }
-  .detail .info { width: auto; }
+  .detail { height: auto; max-height: none; flex-direction: column; gap: 12px; }
+  .detail .info { width: auto; max-width: none; }
   .detail .plot-wrap { height: 240px; flex: none; }
 }
 </style>
@@ -284,6 +305,7 @@ details summary { cursor: pointer; color: var(--text-muted); font-size: 12.5px; 
       </details>
     </section>
   </aside>
+  <div class="splitter v" id="split-side" role="separator" aria-orientation="vertical" aria-label="Resize side panel" tabindex="0" title="Drag to resize · double-click to reset"></div>
 
   <main class="main">
     <div class="toolbar">
@@ -301,11 +323,16 @@ details summary { cursor: pointer; color: var(--text-muted); font-size: 12.5px; 
       <div class="tooltip" id="tooltip" hidden></div>
     </div>
     <div class="legend" id="legend"></div>
+    <div class="splitter h" id="split-detail" role="separator" aria-orientation="horizontal" aria-label="Resize detail panel" tabindex="0" title="Drag to resize · double-click to reset"></div>
     <div class="detail" id="detail" hidden>
       <div class="info" id="detail-info"></div>
+      <div class="splitter v" id="split-info" role="separator" aria-orientation="vertical" aria-label="Resize detail information" tabindex="0" title="Drag to resize · double-click to reset"></div>
       <div style="flex:1; min-width:0; display:flex; flex-direction:column">
         <div class="plot-wrap"><canvas id="plot" aria-label="Activity against time"></canvas></div>
-        <div class="plot-legend" id="plot-legend"></div>
+        <div class="plot-foot">
+          <div class="plot-legend" id="plot-legend"></div>
+          <label class="small"><input type="checkbox" id="plot-linear"> Linear y-axis</label>
+        </div>
       </div>
     </div>
   </main>
@@ -702,6 +729,7 @@ details summary { cursor: pointer; color: var(--text-muted); font-size: 12.5px; 
     constants: { ...HeModel.DEFAULT_CONSTANTS },
     t: null, // seconds; null = end
     decades: 10,
+    plotLinear: false,
     selected: null,
     camera: null,
     model: null,
@@ -1398,9 +1426,24 @@ details summary { cursor: pointer; color: var(--text-muted); font-size: 12.5px; 
       pctx.fillStyle = muted; pctx.font = '12px system-ui'; pctx.fillText('Zero activity over the whole history', L, H / 2);
       return;
     }
-    const hi = Math.ceil(Math.log10(ymax));
-    const lo = hi - Math.min(12, Math.max(4, state.decades));
-    const y = (v) => T + (1 - (Math.log10(Math.max(v, 10 ** (lo - 1))) - lo) / (hi - lo)) * (H - T - B);
+    // y axis: logarithmic over up to `decades` decades, or linear from zero
+    let y, yTicks;
+    if (state.plotLinear) {
+      const raw = ymax / 5;
+      const mag = 10 ** Math.floor(Math.log10(raw));
+      const step = [1, 2, 2.5, 5, 10].map((f) => f * mag).find((v) => v >= raw);
+      const top = Math.ceil(ymax / step) * step;
+      y = (v) => T + (1 - v / top) * (H - T - B);
+      yTicks = [];
+      for (let k = 0; k * step <= top * (1 + 1e-9); k++) yTicks.push([k * step, fmtNum(k * step)]);
+    } else {
+      const hi = Math.ceil(Math.log10(ymax));
+      const lo = hi - Math.min(12, Math.max(4, state.decades));
+      y = (v) => T + (1 - (Math.log10(Math.max(v, 10 ** (lo - 1))) - lo) / (hi - lo)) * (H - T - B);
+      const ystep = hi - lo > 8 ? 2 : 1;
+      yTicks = [];
+      for (let d = lo; d <= hi; d += ystep) yTicks.push([10 ** d, `1e${d}`]);
+    }
     plotGeom = { L, R, tEnd, W };
 
     // power shading
@@ -1416,11 +1459,10 @@ details summary { cursor: pointer; color: var(--text-muted); font-size: 12.5px; 
     pctx.font = '11px system-ui, sans-serif';
     pctx.strokeStyle = border; pctx.fillStyle = muted; pctx.lineWidth = 1;
     pctx.textAlign = 'right'; pctx.textBaseline = 'middle';
-    const ystep = hi - lo > 8 ? 2 : 1;
-    for (let d = lo; d <= hi; d += ystep) {
-      const yy = y(10 ** d);
+    for (const [v, label] of yTicks) {
+      const yy = y(v);
       pctx.beginPath(); pctx.moveTo(L, yy); pctx.lineTo(W - R, yy); pctx.stroke();
-      pctx.fillText(`1e${d}`, L - 6, yy);
+      pctx.fillText(label, L - 6, yy);
     }
     pctx.textAlign = 'center'; pctx.textBaseline = 'top';
     const span = tEnd / tUnit;
@@ -1440,7 +1482,8 @@ details summary { cursor: pointer; color: var(--text-muted); font-size: 12.5px; 
       pctx.beginPath();
       let pen = false;
       arr.forEach((v, j) => {
-        if (!(v > 0)) { pen = false; return; }
+        // a log axis has no zero: break the line there
+        if (!(v > 0) && !(state.plotLinear && v === 0)) { pen = false; return; }
         const px = x(times[j]), py = y(v);
         if (pen) pctx.lineTo(px, py); else pctx.moveTo(px, py);
         pen = true;
@@ -1533,11 +1576,65 @@ details summary { cursor: pointer; color: var(--text-muted); font-size: 12.5px; 
   }
   $('decades').value = state.decades;
   $('decades').addEventListener('change', (ev) => { state.decades = Math.min(30, Math.max(1, Math.round(Number(ev.target.value) || 10))); ev.target.value = state.decades; renderLegend(); drawChart(); drawPlot(); });
+  $('plot-linear').addEventListener('change', (ev) => { state.plotLinear = ev.target.checked; drawPlot(); });
   $('zoom-in').addEventListener('click', () => zoom(1.5));
   $('zoom-out').addEventListener('click', () => zoom(1 / 1.5));
   $('zoom-fit').addEventListener('click', () => { state.camera = fitCamera(); drawChart(); });
   $('zoom-sel').addEventListener('click', () => { if (state.selected) { centreOn(state.selected, 60); drawChart(); } });
   new ResizeObserver(resize).observe($('chart-wrap'));
+  new ResizeObserver(() => drawPlot()).observe(plot.parentElement);
+
+  // ------------------------------------------------------------ resizable panels
+  const LAYOUT_KEY = 'he-loop-layout';
+  let layout = {};
+  try { layout = JSON.parse(localStorage.getItem(LAYOUT_KEY)) || {}; } catch { layout = {}; }
+  function setSize(name, px) {
+    if (px === null) { delete layout[name]; document.documentElement.style.removeProperty(`--${name}`); }
+    else { layout[name] = Math.round(px); document.documentElement.style.setProperty(`--${name}`, `${layout[name]}px`); }
+    try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch { /* storage unavailable */ }
+  }
+  /**
+   * A divider that sets one size: `measure` reads it, `limits` bounds it, and
+   * `sign` says whether dragging right/down grows (+1) or shrinks (-1) it.
+   */
+  function splitter(id, name, axis, sign, measure, limits) {
+    const el = $(id);
+    const clamp = (v) => { const [lo, hi] = limits(); return Math.min(Math.max(v, lo), Math.max(lo, hi)); };
+    el.addEventListener('pointerdown', (ev) => {
+      ev.preventDefault();
+      try { el.setPointerCapture(ev.pointerId); } catch { /* pointer already gone */ }
+      const start = measure(), origin = axis === 'x' ? ev.clientX : ev.clientY;
+      el.classList.add('active');
+      document.body.classList.add('resizing', axis === 'x' ? 'col' : 'row');
+      const move = (e) => setSize(name, clamp(start + sign * ((axis === 'x' ? e.clientX : e.clientY) - origin)));
+      const up = () => {
+        el.classList.remove('active');
+        document.body.classList.remove('resizing', 'col', 'row');
+        el.removeEventListener('pointermove', move);
+        el.removeEventListener('pointerup', up);
+        el.removeEventListener('pointercancel', up);
+      };
+      el.addEventListener('pointermove', move);
+      el.addEventListener('pointerup', up);
+      el.addEventListener('pointercancel', up);
+    });
+    el.addEventListener('dblclick', () => setSize(name, null));
+    el.addEventListener('keydown', (ev) => {
+      const keys = axis === 'x' ? { ArrowLeft: -1, ArrowRight: 1 } : { ArrowUp: -1, ArrowDown: 1 };
+      if (!(ev.key in keys)) return;
+      ev.preventDefault();
+      setSize(name, clamp(measure() + sign * keys[ev.key] * (ev.shiftKey ? 50 : 10)));
+    });
+  }
+  const mainEl = document.querySelector('main.main');
+  splitter('split-side', 'side-w', 'x', 1, () => document.querySelector('aside.side').offsetWidth,
+    () => [220, window.innerWidth - 360]);
+  splitter('split-detail', 'detail-h', 'y', -1, () => $('detail').offsetHeight,
+    () => [160, mainEl.clientHeight - 180]);
+  splitter('split-info', 'info-w', 'x', 1, () => $('detail-info').offsetWidth,
+    () => [160, $('detail').clientWidth - 260]);
+  for (const [name, px] of Object.entries(layout)) document.documentElement.style.setProperty(`--${name}`, `${px}px`);
+
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { renderLegend(); drawChart(); drawPlot(); drawPower(); });
 
   renderSteps();
