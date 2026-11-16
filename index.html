@@ -743,6 +743,7 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
     model: null,
     solution: null,
     acts: null,
+    maxActs: null,
     error: null,
   };
 
@@ -761,9 +762,11 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
       if (steps.length === 0) throw new Error('Add at least one step with a positive duration.');
       if (!(state.nominal > 0)) throw new Error('The nominal power must be positive.');
       state.solution = HeModel.solve(state.model, steps, state.nominal);
+      state.maxActs = maxActivities(state.model, state.solution);
     } catch (err) {
       state.error = err.message;
       state.solution = null;
+      state.maxActs = null;
     }
     $('status').textContent = state.error ? state.error : `Solved in ${Math.round(performance.now() - t0)} ms · ${state.model ? state.model.N : 0} radionuclides`;
     $('status').style.color = state.error ? css('--danger') : '';
@@ -807,10 +810,33 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
     return undefined;
   }
 
+  /**
+   * Largest activity of any nuclide at any time, in W and in He, so the colour
+   * scale stays fixed while the time changes. Each step is sampled at its ends
+   * and at log-spaced times from 1 s, which catches the ingrowth peaks of
+   * daughters after a power change as well as slow build-up.
+   */
+  function maxActivities(model, solution) {
+    const max = { W: 0, He: 0 };
+    for (const seg of solution.segments) {
+      const T = seg.t1 - seg.t0;
+      const taus = [0, T];
+      const decades = Math.max(1, Math.log10(Math.max(T, 10)));
+      // three per decade matches a dense uniform grid for both default profiles
+      for (let k = 0; k <= 3 * decades; k++) taus.push(Math.min(T, 10 ** (k / 3)));
+      for (const tau of taus) {
+        const a = HeModel.activitiesAt(model, solution, seg.t0 + tau);
+        for (const view of ['W', 'He']) for (const v of a[view]) if (v > max[view]) max[view] = v;
+      }
+    }
+    return max;
+  }
+
+  /** Colour scale of the current view: `decades` decades below the largest value over all times. */
   function scaleRange() {
     let max = 0;
     if (state.view === 'production') for (const v of productionByKey.values()) max = Math.max(max, v);
-    else if (state.acts && (state.view === 'W' || state.view === 'He')) for (const v of state.acts[state.view]) max = Math.max(max, v);
+    else if (state.maxActs && (state.view === 'W' || state.view === 'He')) max = state.maxActs[state.view];
     if (!(max > 0)) return null;
     const top = Math.ceil(Math.log10(max));
     return { lo: top - state.decades, hi: top };
@@ -1172,7 +1198,8 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
       const shrink = Math.min(len * 0.3, s * 0.28);
       const x1 = a.x + dx * shrink, y1 = a.y + dy * shrink;
       const x2 = b.x - dx * shrink, y2 = b.y - dy * shrink;
-      const color = ARROW_COLORS[category(mode)];
+      // decay-mode colours would vanish against the colour scale of the value views
+      const color = state.view === 'decay' ? ARROW_COLORS[category(mode)] : '#ffffff';
       const width = Math.max(1.2, Math.min(5, s * 0.06)) * (0.45 + 0.55 * Math.sqrt(br));
       // dark halo so arrows read on any fill
       for (const [stroke, w] of [['rgba(0,0,0,0.55)', width + 2.5], [color, width]]) {
@@ -1215,7 +1242,7 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
     if (!range) { el.innerHTML = '<span class="muted">No values</span>'; return; }
     el.innerHTML = `<span class="colorbar"><span>10<sup>${range.lo}</sup></span><canvas id="cbar" width="260" height="12"></canvas><span>10<sup>${range.hi}</sup> ${VIEWS[state.view].unit}</span></span>
       <span><span class="sw" style="background:${css('--cell-empty')}"></span>below scale or not present</span>
-      ${state.selected ? '<span class="muted">Arrows: decay paths through the selection (colour = decay mode, width = branching)</span>' : '<span class="muted">Click a nuclide for its history and decay paths</span>'}`;
+      ${state.selected ? `<span class="muted">Arrows: decay paths through the selection (width = branching)</span>` : '<span class="muted">Click a nuclide for its history and decay paths</span>'}`;
     const cb = $('cbar').getContext('2d');
     for (let i = 0; i < 260; i++) { cb.fillStyle = colormap(i / 259); cb.fillRect(i, 0, 1, 12); }
   }
