@@ -635,8 +635,8 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
   };
   const DEFAULT_PROFILE = 'rampUp';
   const ELEMENTS = ['n', 'H', 'He', 'Li', 'Be', 'B', 'C', 'N', 'O', 'F', 'Ne', 'Na', 'Mg', 'Al', 'Si', 'P', 'S', 'Cl', 'Ar', 'K', 'Ca', 'Sc', 'Ti', 'V', 'Cr', 'Mn', 'Fe', 'Co', 'Ni', 'Cu', 'Zn', 'Ga', 'Ge', 'As', 'Se', 'Br', 'Kr', 'Rb', 'Sr', 'Y', 'Zr', 'Nb', 'Mo', 'Tc', 'Ru', 'Rh', 'Pd', 'Ag', 'Cd', 'In', 'Sn', 'Sb', 'Te', 'I', 'Xe', 'Cs', 'Ba', 'La', 'Ce', 'Pr', 'Nd', 'Pm', 'Sm', 'Eu', 'Gd', 'Tb', 'Dy', 'Ho', 'Er', 'Tm', 'Yb', 'Lu', 'Hf', 'Ta', 'W', 'Re', 'Os', 'Ir', 'Pt', 'Au', 'Hg', 'Tl', 'Pb', 'Bi', 'Po', 'At', 'Rn', 'Fr', 'Ra', 'Ac', 'Th', 'Pa', 'U', 'Np', 'Pu', 'Am', 'Cm', 'Bk', 'Cf', 'Es', 'Fm', 'Md', 'No', 'Lr', 'Rf', 'Db', 'Sg', 'Bh', 'Hs', 'Mt', 'Ds', 'Rg', 'Cn', 'Nh', 'Fl', 'Mc', 'Lv', 'Ts', 'Og'];
-  // viridis, sampled
-  const VIRIDIS = ['#440154', '#482878', '#3e4989', '#31688e', '#26828e', '#1f9e89', '#35b779', '#6ece58', '#b5de2b', '#fde725'];
+  // jet (MATLAB): dark blue - blue - cyan - yellow - red - dark red, as [position, colour]
+  const JET = [[0, '#00007f'], [0.125, '#0000ff'], [0.375, '#00ffff'], [0.625, '#ffff00'], [0.875, '#ff0000'], [1, '#7f0000']];
 
   const $ = (id) => document.getElementById(id);
   const css = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -673,16 +673,24 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
   }
   const escapeHtml = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  function viridis(f) {
+  function colormapRgb(f) {
     f = Math.min(1, Math.max(0, f));
-    const x = f * (VIRIDIS.length - 1);
-    const i = Math.min(VIRIDIS.length - 2, Math.floor(x));
-    const t = x - i;
+    let i = 0;
+    while (i < JET.length - 2 && f > JET[i + 1][0]) i++;
+    const [[f0, c0], [f1, c1]] = [JET[i], JET[i + 1]];
+    const t = (f - f0) / (f1 - f0);
     const p = (h) => [1, 3, 5].map((o) => parseInt(h.slice(o, o + 2), 16));
-    const [a, b] = [p(VIRIDIS[i]), p(VIRIDIS[i + 1])];
-    return `rgb(${a.map((v, k) => Math.round(v + (b[k] - v) * t)).join(',')})`;
+    const [a, b] = [p(c0), p(c1)];
+    return a.map((v, k) => Math.round(v + (b[k] - v) * t));
   }
-  const textOnViridis = (f) => (f > 0.62 ? '#111111' : '#ffffff');
+  const colormap = (f) => `rgb(${colormapRgb(f).join(',')})`;
+  /** Black or white text, whichever contrasts more with the fill (WCAG relative luminance). */
+  function textOnColormap(f) {
+    const lin = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4; };
+    const [r, g, b] = colormapRgb(f).map(lin);
+    const L = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    return (L + 0.05) / 0.05 > 1.05 / (L + 0.05) ? '#111111' : '#ffffff';
+  }
 
   // ------------------------------------------------------------ data
   const chart = DATA.chart;
@@ -953,7 +961,7 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
     if (!(v > 0) || !range) return { fill: null, text: css('--text-muted'), f: null };
     const f = (Math.log10(v) - range.lo) / (range.hi - range.lo);
     if (f < 0) return { fill: null, text: css('--text-muted'), f, below: true };
-    return { fill: viridis(f), text: textOnViridis(f), f };
+    return { fill: colormap(f), text: textOnColormap(f), f };
   }
 
   function drawChart() {
@@ -1209,7 +1217,7 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
       <span><span class="sw" style="background:${css('--cell-empty')}"></span>below scale or not present</span>
       ${state.selected ? '<span class="muted">Arrows: decay paths through the selection (colour = decay mode, width = branching)</span>' : '<span class="muted">Click a nuclide for its history and decay paths</span>'}`;
     const cb = $('cbar').getContext('2d');
-    for (let i = 0; i < 260; i++) { cb.fillStyle = viridis(i / 259); cb.fillRect(i, 0, 1, 12); }
+    for (let i = 0; i < 260; i++) { cb.fillStyle = colormap(i / 259); cb.fillRect(i, 0, 1, 12); }
   }
 
   // ------------------------------------------------------------ tooltip
