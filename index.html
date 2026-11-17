@@ -1434,10 +1434,31 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
       const He = series.Sg.map((v, j) => v + series.Sa[j]);
       plotSeries = { times, W: series.W, He, Sg: series.Sg, Sa: series.Sa };
     }
-    $('plot-legend').innerHTML = plotSeries
-      ? `<span style="--c:${css('--w-line')}">Tungsten</span><span style="--c:${css('--he-line')}">Helium total</span><span class="dash" style="--c:${css('--gas-line')}">He gas</span><span class="dash" style="--c:${css('--aer-line')}">He aerosol</span><span class="muted">shading: power · click to set time</span>`
-      : '<span class="muted">Not in the inventory model: not produced, and not fed by decay of anything produced.</span>';
+    renderPlotLegend();
     drawPlot();
+  }
+
+  /**
+   * Curves of the time plot: the inventory the chart shows (W or He), or all
+   * of them in the views that show no inventory.
+   */
+  function plotCurves() {
+    const all = [
+      ['Sg', 'He gas', '--gas-line', [5, 3], 1.5],
+      ['Sa', 'He aerosol', '--aer-line', [5, 3], 1.5],
+      ['He', 'Helium total', '--he-line', [], 2.2],
+      ['W', 'Tungsten', '--w-line', [], 2.2],
+    ];
+    if (state.view === 'W') return all.filter(([k]) => k === 'W');
+    if (state.view === 'He') return all.filter(([k]) => k === 'He');
+    return all;
+  }
+  function renderPlotLegend() {
+    $('plot-legend').innerHTML = plotSeries
+      ? plotCurves().slice().reverse().map(([, label, color, dash]) =>
+        `<span${dash.length ? ' class="dash"' : ''} style="--c:${css(color)}">${label}</span>`).join('') +
+        '<span class="muted">shading: power · click to set time</span>'
+      : '<span class="muted">Not in the inventory model: not produced, and not fed by decay of anything produced.</span>';
   }
 
   const plot = $('plot');
@@ -1453,9 +1474,10 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
     pctx.clearRect(0, 0, W, H);
     plotGeom = null;
     if (!plotSeries) return;
-    const { times, W: sW, He, Sg, Sa } = plotSeries;
+    const { times } = plotSeries;
+    const curves = plotCurves();
     let ymax = 0;
-    for (const arr of [sW, He]) for (const v of arr) ymax = Math.max(ymax, v);
+    for (const [k] of curves) for (const v of plotSeries[k]) ymax = Math.max(ymax, v);
     const muted = css('--text-muted'), border = css('--border');
     const L = 64, R = 12, T = 10, B = 30;
     const tEnd = times[times.length - 1];
@@ -1532,10 +1554,7 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
     };
     pctx.save();
     pctx.beginPath(); pctx.rect(L, T, W - L - R, H - T - B); pctx.clip();
-    line(Sg, css('--gas-line'), [5, 3], 1.5);
-    line(Sa, css('--aer-line'), [5, 3], 1.5);
-    line(He, css('--he-line'), [], 2.2);
-    line(sW, css('--w-line'), [], 2.2);
+    for (const [k, , color, dash, width] of curves) line(plotSeries[k], css(color), dash, width);
     pctx.restore();
     // current time
     const xt = x(currentT());
@@ -1577,6 +1596,8 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
     renderLegend();
     renderTopList();
     drawChart();
+    renderPlotLegend();
+    drawPlot();
   }
   document.querySelectorAll('#views input').forEach((input) => input.addEventListener('change', () => setView(input.value)));
   $('add-step').addEventListener('click', () => { state.steps.push({ hours: 720, mw: state.nominal }); profileSelect.value = 'custom'; renderSteps(); recompute(); });
