@@ -190,6 +190,11 @@ details summary { cursor: pointer; color: var(--text-muted); font-size: 12.5px; 
 .detail .info dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; margin: 6px 0; font-variant-numeric: tabular-nums; }
 .detail .info dt { color: var(--text-muted); }
 .detail .info dd { margin: 0; }
+.detail .plot-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.detail .plot-col[hidden] { display: none; }
+/* without the plot (chart of nuclides view) the information takes the panel */
+.detail.no-plot .info { width: auto; max-width: none; flex: 1; }
+.detail.no-plot #split-info { display: none; }
 .detail .plot-wrap { position: relative; flex: 1; min-width: 0; }
 .detail .plot-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; }
 .plot-foot { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; }
@@ -328,7 +333,7 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
     <div class="detail" id="detail" hidden>
       <div class="info" id="detail-info"></div>
       <div class="splitter v" id="split-info" role="separator" aria-orientation="vertical" aria-label="Resize detail information" tabindex="0" title="Drag to resize · double-click to reset"></div>
-      <div style="flex:1; min-width:0; display:flex; flex-direction:column">
+      <div class="plot-col" id="plot-col">
         <div class="plot-wrap"><canvas id="plot" aria-label="Activity against time"></canvas></div>
         <div class="plot-foot">
           <div class="plot-legend" id="plot-legend"></div>
@@ -1439,8 +1444,8 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
   }
 
   /**
-   * Curves of the time plot: the inventory the chart shows (W or He), or all
-   * of them in the views that show no inventory.
+   * Curves of the time plot: the inventory the chart shows (W or He), both
+   * inventories with production rates, and none with the chart of nuclides.
    */
   function plotCurves() {
     const all = [
@@ -1451,9 +1456,13 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
     ];
     if (state.view === 'W') return all.filter(([k]) => k === 'W');
     if (state.view === 'He') return all.filter(([k]) => k === 'He');
-    return all;
+    if (state.view === 'production') return all.filter(([k]) => k === 'W' || k === 'He');
+    return [];
   }
   function renderPlotLegend() {
+    const show = plotCurves().length > 0;
+    $('plot-col').hidden = !show;
+    $('detail').classList.toggle('no-plot', !show);
     $('plot-legend').innerHTML = plotSeries
       ? plotCurves().slice().reverse().map(([, label, color, dash]) =>
         `<span${dash.length ? ' class="dash"' : ''} style="--c:${css(color)}">${label}</span>`).join('') +
