@@ -290,6 +290,7 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
     <section>
       <h2>Model</h2>
       <label class="row"><input type="checkbox" id="ignore-chains"> Ignore decay chains</label>
+      <label class="row" title="Decay ingrowth in the tungsten inventory; off by default"><input type="checkbox" id="chains-w"> Decay chains in tungsten</label>
       <details>
         <summary>Constants</summary>
         <div class="consts">
@@ -344,11 +345,13 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
  * Each radionuclide has an inventory in the tungsten (I) and in the helium,
  * split into gas (Sg) and aerosol (Sa):
  *
- *   dI/dt  = (1-fe) P pf               - (fD + fER Ep + λ) I  + decay ingrowth in I
+ *   dI/dt  = (1-fe) P pf               - (fD + fER Ep + λ) I  [+ decay ingrowth in I]
  *   dSg/dt = gP fe P pf + gP fD I      - (fg3 + fHe + λ) Sg   + decay ingrowth in Sg
  *   dSa/dt = (1-gP) fe P pf + (1-gP) fD I - (fg2 + λ) Sa      + decay ingrowth in Sa
  *
- * where pf is the power relative to nominal. Within a step of constant power
+ * where pf is the power relative to nominal. Decay ingrowth in the tungsten
+ * is optional (options.chainsInW, off by default): daughters of decays in
+ * the tungsten are then not followed there. Within a step of constant power
  * the system is linear with constant coefficients, and since decay never
  * returns to an ancestor the state graph is acyclic. Each state is then a
  * constant plus a sum of exponentials, one per state upstream of it, whose
@@ -399,6 +402,7 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
   function buildModel(data, options = {}) {
     const c = { ...DEFAULT_CONSTANTS, ...(options.constants || {}) };
     const ignoreChains = !!options.ignoreChains;
+    const chainsInW = !!options.chainsInW;
     const { keys, chart, production } = modelNuclides(data);
     const N = keys.length;
     const index = new Map(keys.map((k, i) => [k, i]));
@@ -434,7 +438,7 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
         for (const [, br, d] of nuclides[i].dm) {
           const j = d === null ? undefined : index.get(d);
           if (j === undefined) continue;
-          for (let comp = 0; comp < 3; comp++) {
+          for (let comp = chainsInW ? 0 : 1; comp < 3; comp++) {
             parents[comp * N + j].push([comp * N + i, br * lam[i]]);
           }
         }
@@ -463,7 +467,7 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
         a[s] *= 1 + 1e-7;
       }
     }
-    return { N, S, keys, index, nuclides, lam, a, b, parents, terms, constants: c, ignoreChains };
+    return { N, S, keys, index, nuclides, lam, a, b, parents, terms, constants: c, ignoreChains, chainsInW };
   }
 
   /**
@@ -734,6 +738,7 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
     steps: PROFILES[DEFAULT_PROFILE].steps.map((s) => ({ ...s })),
     nominal: 5,
     ignoreChains: false,
+    chainsInW: false,
     constants: { ...HeModel.DEFAULT_CONSTANTS },
     t: null, // seconds; null = end
     decades: 10,
@@ -753,9 +758,9 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
     const t0 = performance.now();
     state.error = null;
     try {
-      const key = JSON.stringify([state.ignoreChains, state.constants]);
+      const key = JSON.stringify([state.ignoreChains, state.chainsInW, state.constants]);
       if (key !== modelKey) {
-        state.model = HeModel.buildModel(DATA, { ignoreChains: state.ignoreChains, constants: state.constants });
+        state.model = HeModel.buildModel(DATA, { ignoreChains: state.ignoreChains, chainsInW: state.chainsInW, constants: state.constants });
         modelKey = key;
       }
       const steps = state.steps.filter((s) => s.hours > 0);
@@ -1603,7 +1608,13 @@ body.resizing.row, body.resizing.row * { cursor: row-resize !important; }
     state.t = on.length ? on[on.length - 1].t1 : 0;
     updateTime();
   });
-  $('ignore-chains').addEventListener('change', (ev) => { state.ignoreChains = ev.target.checked; pathCache.clear(); recompute(); });
+  $('ignore-chains').addEventListener('change', (ev) => {
+    state.ignoreChains = ev.target.checked;
+    $('chains-w').disabled = state.ignoreChains;
+    pathCache.clear();
+    recompute();
+  });
+  $('chains-w').addEventListener('change', (ev) => { state.chainsInW = ev.target.checked; recompute(); });
   for (const name of ['fER', 'fHe', 'fg2']) {
     const input = $(`c-${name}`);
     input.value = state.constants[name];
